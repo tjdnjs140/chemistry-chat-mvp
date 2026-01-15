@@ -1,12 +1,12 @@
-import { Suspense } from "react";
-import InviteClient from "./InviteClient";
+import dynamicImport from "next/dynamic";
 
 export const dynamic = "force-dynamic";
 
+const InviteClient = dynamicImport(() => import("./InviteClient"), {
+  ssr: false,
+  loading: () => <div style={{ padding: 16 }}>로딩중...</div>,
+});
+
 export default function Page() {
-  return (
-    <Suspense fallback={<div style={{ padding: 16 }}>로딩중...</div>}>
-      <InviteClient />
-    </Suspense>
-  );
+  return <InviteClient />;
 }
