@@ -14,8 +14,19 @@ type MatchState = {
 
 const LS_KEY = "chemistry_test_hub_v1";
 
+// ✅ A(프로덕션 고정 도메인) 강제 사용:
+// - NEXT_PUBLIC_APP_ORIGIN이 있으면 그걸 사용
+// - 없으면 window.location.origin
+function getAppOrigin() {
+  const envOrigin = (process.env.NEXT_PUBLIC_APP_ORIGIN || "").trim();
+  if (envOrigin) return envOrigin.replace(/\/+$/, "");
+  if (typeof window !== "undefined") return window.location.origin;
+  return "";
+}
+
 function buildLink(path: string, matchId: string, k: string) {
-  const url = new URL(path, window.location.origin);
+  const origin = getAppOrigin();
+  const url = new URL(path, origin || "http://localhost:3000");
   url.searchParams.set("match_id", matchId);
   url.searchParams.set("k", k);
   return url.toString();
@@ -44,7 +55,6 @@ export default function TestHubClient() {
 
   const [now, setNow] = useState(Date.now());
 
-  // 로컬 저장값 로드
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -58,32 +68,27 @@ export default function TestHubClient() {
     }
   }, []);
 
-  // 타이머 tick (남은 시간 표시용)
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
   }, []);
 
   const aJoin = useMemo(() => {
-    if (typeof window === "undefined") return "";
     if (!matchId || !aKey) return "";
     return buildLink("/join", matchId, aKey);
   }, [matchId, aKey]);
 
   const bJoin = useMemo(() => {
-    if (typeof window === "undefined") return "";
     if (!matchId || !bKey) return "";
     return buildLink("/join", matchId, bKey);
   }, [matchId, bKey]);
 
   const aChat = useMemo(() => {
-    if (typeof window === "undefined") return "";
     if (!matchId || !aKey) return "";
     return buildLink("/chat", matchId, aKey);
   }, [matchId, aKey]);
 
   const bChat = useMemo(() => {
-    if (typeof window === "undefined") return "";
     if (!matchId || !bKey) return "";
     return buildLink("/chat", matchId, bKey);
   }, [matchId, bKey]);
@@ -144,16 +149,11 @@ export default function TestHubClient() {
     setCreateError(null);
 
     try {
-      // ✅ 실제 프로젝트에 존재하는 route: app/api/match/create/route.ts
       const res = await fetch("/api/match/create", { method: "POST" });
-
-      // JSON이 아닐 수도 있으니 text로 먼저 받고 파싱 시도
       const raw = await res.text();
       const json = safeJsonParse(raw);
 
       if (!res.ok) {
-        // 서버가 JSON 에러를 주면 message를 보여주고,
-        // 아니면 raw 일부라도 보여줘서 디버깅 가능하게
         const msg =
           json?.message ||
           json?.error ||
@@ -163,13 +163,10 @@ export default function TestHubClient() {
       }
 
       if (!json?.ok) {
-        const msg = json?.message || "생성 실패: ok=false";
-        setCreateError(msg);
+        setCreateError(json?.message || "생성 실패: ok=false");
         return;
       }
 
-      // route.ts가 a_join_key/b_join_key를 내려주면 그대로 사용,
-      // 혹시 a_link/b_link만 내려주는 버전이라면 링크에서 k 추출도 지원
       const nextMatchId = String(json.match_id || "").trim();
 
       let nextAKey = String(json.a_join_key || "").trim();
@@ -200,7 +197,6 @@ export default function TestHubClient() {
       setMatchId(nextMatchId);
       setAKey(nextAKey);
       setBKey(nextBKey);
-
       saveLocal({ matchId: nextMatchId, aKey: nextAKey, bKey: nextBKey });
 
       alert("생성 완료! 아래 링크가 자동 생성됩니다.");
@@ -223,7 +219,6 @@ export default function TestHubClient() {
 
     try {
       const res = await fetch(`/api/match/state?match_id=${encodeURIComponent(m)}`);
-
       const raw = await res.text();
       const json = safeJsonParse(raw);
 
@@ -263,10 +258,9 @@ export default function TestHubClient() {
       <p style={{ marginTop: 0, color: "#666" }}>
         상용화(자동 매칭/자동 발송) 전까지 운영자가 빠르게 테스트하기 위한 홈 화면입니다.
         <br />
-        아래에서 <b>원클릭 생성</b>으로 Airtable에 매치를 만들고, A/B Join 링크를 바로 복사/새탭으로 테스트하세요.
+        링크 생성은 <b>NEXT_PUBLIC_APP_ORIGIN</b> (프로덕션 도메인) 기준으로 고정됩니다.
       </p>
 
-      {/* 빠른 이동 */}
       <div
         style={{
           display: "flex",
@@ -319,7 +313,6 @@ export default function TestHubClient() {
         </button>
       </div>
 
-      {/* 입력/저장 */}
       <div
         style={{
           marginTop: 14,
@@ -392,9 +385,7 @@ export default function TestHubClient() {
             </button>
           </div>
 
-          {createError && (
-            <div style={{ color: "#b00020", fontSize: 13 }}>생성 오류: {createError}</div>
-          )}
+          {createError && <div style={{ color: "#b00020", fontSize: 13 }}>생성 오류: {createError}</div>}
 
           {copied && (
             <div style={{ color: "#0a7a2f", fontSize: 13 }}>✓ {copied} 링크를 복사했습니다.</div>
@@ -450,13 +441,10 @@ export default function TestHubClient() {
             </label>
           </div>
 
-          {stateError && (
-            <div style={{ color: "#b00020", fontSize: 13 }}>상태 조회 오류: {stateError}</div>
-          )}
+          {stateError && <div style={{ color: "#b00020", fontSize: 13 }}>상태 조회 오류: {stateError}</div>}
         </div>
       </div>
 
-      {/* 상태 카드 */}
       <div
         style={{
           marginTop: 14,
@@ -488,7 +476,6 @@ export default function TestHubClient() {
         )}
       </div>
 
-      {/* 링크 생성 */}
       <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
         <LinkCard
           title="A Join 링크"
@@ -520,7 +507,6 @@ export default function TestHubClient() {
         />
       </div>
 
-      {/* 2탭 테스트 */}
       <div
         style={{
           marginTop: 14,
@@ -546,14 +532,18 @@ export default function TestHubClient() {
         </div>
 
         {!canMakeLinks && (
-          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>match_id + A/B key를 입력하면 버튼이 활성화됩니다.</div>
+          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+            match_id + A/B key를 입력하면 버튼이 활성화됩니다.
+          </div>
         )}
       </div>
 
-      {/* 디버그 */}
       <div style={{ marginTop: 14, fontSize: 12, color: "#666" }}>
         <div>
           현재 도메인: <code>{typeof window !== "undefined" ? window.location.origin : ""}</code>
+        </div>
+        <div>
+          링크 기준 도메인: <code>{getAppOrigin()}</code>
         </div>
         <div>
           현재 시간: <code>{new Date(now).toLocaleString()}</code>
