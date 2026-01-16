@@ -1,0 +1,549 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+
+type MatchState = {
+  match_id: string;
+  user_a_id: string;
+  user_b_id: string;
+  a_sent_first: boolean;
+  b_sent_first: boolean;
+  started_at: number | null;
+  expires_at: number | null;
+};
+
+const LS_KEY = "chemistry_test_hub_v1";
+
+function buildLink(path: string, matchId: string, k: string) {
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set("match_id", matchId);
+  url.searchParams.set("k", k);
+  return url.toString();
+}
+
+function formatMMSS(ms: number) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const mm = String(Math.floor(s / 60)).padStart(2, "0");
+  const ss = String(s % 60).padStart(2, "0");
+  return `${mm}:${ss}`;
+}
+
+export default function TestHubClient() {
+  const [matchId, setMatchId] = useState("");
+  const [aKey, setAKey] = useState("");
+  const [bKey, setBKey] = useState("");
+
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const [state, setState] = useState<MatchState | null>(null);
+  const [stateError, setStateError] = useState<string | null>(null);
+  const [loadingState, setLoadingState] = useState(false);
+
+  const [now, setNow] = useState(Date.now());
+
+  // 로컬 저장값 로드
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return;
+      const v = JSON.parse(raw);
+      setMatchId(v.matchId ?? "");
+      setAKey(v.aKey ?? "");
+      setBKey(v.bKey ?? "");
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // 타이머 tick (남은 시간 표시용)
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const aJoin = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    if (!matchId || !aKey) return "";
+    return buildLink("/join", matchId, aKey);
+  }, [matchId, aKey]);
+
+  const bJoin = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    if (!matchId || !bKey) return "";
+    return buildLink("/join", matchId, bKey);
+  }, [matchId, bKey]);
+
+  const aChat = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    if (!matchId || !aKey) return "";
+    return buildLink("/chat", matchId, aKey);
+  }, [matchId, aKey]);
+
+  const bChat = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    if (!matchId || !bKey) return "";
+    return buildLink("/chat", matchId, bKey);
+  }, [matchId, bKey]);
+
+  const saveLocal = () => {
+    try {
+      localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({
+          matchId: matchId.trim(),
+          aKey: aKey.trim(),
+          bKey: bKey.trim(),
+        })
+      );
+      alert("저장 완료");
+    } catch {
+      alert("저장 실패(브라우저 설정/권한 확인)");
+    }
+  };
+
+  const clearLocal = () => {
+    try {
+      localStorage.removeItem(LS_KEY);
+      setMatchId("");
+      setAKey("");
+      setBKey("");
+      setState(null);
+      setStateError(null);
+      alert("초기화 완료");
+    } catch {
+      alert("초기화 실패");
+    }
+  };
+
+  const copy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(null), 1200);
+    } catch {
+      alert("복사 실패: 링크를 드래그해서 수동 복사해주세요.");
+    }
+  };
+
+  const openNewTab = (url: string) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const fetchState = async () => {
+    const m = matchId.trim();
+    if (!m) {
+      setStateError("match_id를 먼저 입력하세요.");
+      return;
+    }
+
+    setLoadingState(true);
+    setStateError(null);
+
+    try {
+      const res = await fetch(`/api/match/state?match_id=${encodeURIComponent(m)}`);
+      const json = await res.json();
+
+      if (!res.ok) {
+        setState(null);
+        setStateError(json?.error || `상태 조회 실패: ${res.status}`);
+        return;
+      }
+
+      const nextState: MatchState | null = json.data ?? null;
+      setState(nextState);
+    } catch (e: any) {
+      setState(null);
+      setStateError(e?.message || "네트워크 오류로 상태 조회 실패");
+    } finally {
+      setLoadingState(false);
+    }
+  };
+
+  const started = !!state?.started_at && !!state?.expires_at;
+  const expired = !!state?.expires_at && state.expires_at <= now;
+  const remainingMs = state?.expires_at ? state.expires_at - now : 0;
+
+  const canMakeLinks = !!matchId && !!aKey && !!bKey;
+
+  return (
+    <div
+      style={{
+        padding: 20,
+        fontFamily: "system-ui, sans-serif",
+        maxWidth: 980,
+        margin: "0 auto",
+        lineHeight: 1.5,
+      }}
+    >
+      <h1 style={{ marginBottom: 6 }}>Chemistry Chat — 테스트 허브</h1>
+      <p style={{ marginTop: 0, color: "#666" }}>
+        상용화(자동 매칭/자동 발송) 전까지 운영자가 빠르게 테스트하기 위한 홈 화면입니다.
+        <br />
+        아래에서 <b>match_id + A/B 키</b>만 넣으면 Join/Chat 링크를 자동 생성하고, 복사/새탭 열기로 2탭 테스트가 가능합니다.
+      </p>
+
+      {/* 빠른 이동 */}
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
+          marginTop: 14,
+          padding: 12,
+          border: "1px solid #eee",
+          borderRadius: 12,
+          background: "#fafafa",
+        }}
+      >
+        <button
+          onClick={() => (window.location.href = "/admin/invite")}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#111",
+            color: "#fff",
+          }}
+        >
+          관리자 초대 링크 생성(/admin/invite)
+        </button>
+
+        <button
+          onClick={() => openNewTab("/join")}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#fff",
+            color: "#111",
+          }}
+        >
+          Join 페이지 열기(/join)
+        </button>
+
+        <button
+          onClick={() => openNewTab("/chat")}
+          style={{
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "1px solid #ddd",
+            background: "#fff",
+            color: "#111",
+          }}
+        >
+          Chat 페이지 열기(/chat)
+        </button>
+      </div>
+
+      {/* 입력/저장 */}
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          border: "1px solid #eee",
+          borderRadius: 12,
+        }}
+      >
+        <h3 style={{ margin: "0 0 10px 0" }}>테스트 값 입력</h3>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+          <label style={{ fontSize: 13, color: "#333" }}>
+            match_id
+            <input
+              value={matchId}
+              onChange={(e) => setMatchId(e.target.value.trim())}
+              placeholder="m_..."
+              style={{
+                width: "100%",
+                padding: 10,
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                marginTop: 6,
+              }}
+            />
+          </label>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <label style={{ fontSize: 13, color: "#333" }}>
+              A key (k)
+              <input
+                value={aKey}
+                onChange={(e) => setAKey(e.target.value.trim())}
+                placeholder="a_..."
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ddd",
+                  marginTop: 6,
+                }}
+              />
+            </label>
+
+            <label style={{ fontSize: 13, color: "#333" }}>
+              B key (k)
+              <input
+                value={bKey}
+                onChange={(e) => setBKey(e.target.value.trim())}
+                placeholder="b_..."
+                style={{
+                  width: "100%",
+                  padding: 10,
+                  borderRadius: 10,
+                  border: "1px solid #ddd",
+                  marginTop: 6,
+                }}
+              />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={saveLocal}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#111",
+                color: "#fff",
+              }}
+            >
+              저장(브라우저에 기억)
+            </button>
+
+            <button
+              onClick={clearLocal}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                color: "#111",
+              }}
+            >
+              초기화(저장값 삭제)
+            </button>
+
+            <button
+              onClick={fetchState}
+              disabled={!matchId || loadingState}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                color: "#111",
+              }}
+            >
+              {loadingState ? "상태 조회 중..." : "상태 조회(/api/match/state)"}
+            </button>
+          </div>
+
+          {copied && (
+            <div style={{ color: "#0a7a2f", fontSize: 13 }}>
+              ✓ {copied} 링크를 복사했습니다.
+            </div>
+          )}
+
+          {stateError && (
+            <div style={{ color: "#b00020", fontSize: 13 }}>
+              상태 조회 오류: {stateError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 상태 카드 */}
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          border: "1px solid #eee",
+          borderRadius: 12,
+          background: "#fafafa",
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>매치 상태(간이 모니터)</h3>
+        {!state && <div style={{ fontSize: 13, color: "#666" }}>상태 조회를 눌러 확인하세요.</div>}
+
+        {state && (
+          <div style={{ fontSize: 13, color: "#333", display: "grid", gap: 6 }}>
+            <div>
+              started: <b>{String(started)}</b> / expired: <b>{String(expired)}</b>
+            </div>
+            <div>
+              a_sent_first: <b>{String(state.a_sent_first)}</b> / b_sent_first:{" "}
+              <b>{String(state.b_sent_first)}</b>
+            </div>
+            {started && !expired && (
+              <div>
+                남은 시간: <b>{formatMMSS(remainingMs)}</b>
+              </div>
+            )}
+            {expired && <div style={{ color: "#b00020" }}>만료됨(대화 종료)</div>}
+          </div>
+        )}
+      </div>
+
+      {/* 링크 생성 */}
+      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+        <LinkCard
+          title="A Join 링크"
+          url={aJoin}
+          disabled={!matchId || !aKey}
+          onCopy={() => copy(aJoin, "A Join")}
+          onOpen={() => openNewTab(aJoin)}
+        />
+        <LinkCard
+          title="B Join 링크"
+          url={bJoin}
+          disabled={!matchId || !bKey}
+          onCopy={() => copy(bJoin, "B Join")}
+          onOpen={() => openNewTab(bJoin)}
+        />
+        <LinkCard
+          title="A Chat 링크"
+          url={aChat}
+          disabled={!matchId || !aKey}
+          onCopy={() => copy(aChat, "A Chat")}
+          onOpen={() => openNewTab(aChat)}
+        />
+        <LinkCard
+          title="B Chat 링크"
+          url={bChat}
+          disabled={!matchId || !bKey}
+          onCopy={() => copy(bChat, "B Chat")}
+          onOpen={() => openNewTab(bChat)}
+        />
+      </div>
+
+      {/* 2탭 테스트 */}
+      <div
+        style={{
+          marginTop: 14,
+          padding: 14,
+          border: "1px solid #eee",
+          borderRadius: 12,
+        }}
+      >
+        <h3 style={{ marginTop: 0 }}>2탭 테스트(원클릭)</h3>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(aJoin)}
+            style={btnPrimary(!canMakeLinks)}
+          >
+            A 참가(Join) 새 탭
+          </button>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(bJoin)}
+            style={btnPrimary(!canMakeLinks)}
+          >
+            B 참가(Join) 새 탭
+          </button>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(aChat)}
+            style={btnGhost(!canMakeLinks)}
+          >
+            A 채팅(Chat) 새 탭
+          </button>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(bChat)}
+            style={btnGhost(!canMakeLinks)}
+          >
+            B 채팅(Chat) 새 탭
+          </button>
+        </div>
+
+        {!canMakeLinks && (
+          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
+            match_id + A/B key를 입력하면 버튼이 활성화됩니다.
+          </div>
+        )}
+      </div>
+
+      {/* 디버그 */}
+      <div style={{ marginTop: 14, fontSize: 12, color: "#666" }}>
+        <div>
+          현재 도메인: <code>{typeof window !== "undefined" ? window.location.origin : ""}</code>
+        </div>
+        <div>
+          현재 시간: <code>{new Date(now).toLocaleString()}</code>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LinkCard({
+  title,
+  url,
+  disabled,
+  onCopy,
+  onOpen,
+}: {
+  title: string;
+  url: string;
+  disabled: boolean;
+  onCopy: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <div
+      style={{
+        padding: 14,
+        border: "1px solid #eee",
+        borderRadius: 12,
+        background: "#fafafa",
+      }}
+    >
+      <h3 style={{ marginTop: 0 }}>{title}</h3>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <code
+          style={{
+            background: "#fff",
+            border: "1px solid #eee",
+            padding: "8px 10px",
+            borderRadius: 10,
+            wordBreak: "break-all",
+            flex: "1 1 560px",
+          }}
+        >
+          {url || "(값을 입력하면 자동 생성됩니다)"}
+        </code>
+
+        <button disabled={disabled || !url} onClick={onCopy} style={btnPrimary(disabled || !url)}>
+          복사
+        </button>
+        <button disabled={disabled || !url} onClick={onOpen} style={btnGhost(disabled || !url)}>
+          새 탭 열기
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function btnPrimary(disabled: boolean) {
+  return {
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: disabled ? "#aaa" : "#111",
+    color: "#fff",
+    cursor: disabled ? "not-allowed" : "pointer",
+  } as const;
+}
+
+function btnGhost(disabled: boolean) {
+  return {
+    padding: "10px 12px",
+    borderRadius: 10,
+    border: "1px solid #ddd",
+    background: "#fff",
+    color: disabled ? "#888" : "#111",
+    cursor: disabled ? "not-allowed" : "pointer",
+  } as const;
+}
