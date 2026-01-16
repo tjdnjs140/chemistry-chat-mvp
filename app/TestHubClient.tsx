@@ -131,23 +131,71 @@ export default function TestHubClient() {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  const safeJsonParse = (raw: string) => {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  };
+
   const createMatch = async () => {
     setCreating(true);
     setCreateError(null);
 
     try {
-      // ✅ 네가 준 route.ts 기준 경로
-      const res = await fetch("/api/admin/match/create", { method: "POST" });
-      const json = await res.json();
+      // ✅ 실제 프로젝트에 존재하는 route: app/api/match/create/route.ts
+      const res = await fetch("/api/match/create", { method: "POST" });
 
-      if (!res.ok || !json?.ok) {
-        setCreateError(json?.message || `생성 실패: ${res.status}`);
+      // JSON이 아닐 수도 있으니 text로 먼저 받고 파싱 시도
+      const raw = await res.text();
+      const json = safeJsonParse(raw);
+
+      if (!res.ok) {
+        // 서버가 JSON 에러를 주면 message를 보여주고,
+        // 아니면 raw 일부라도 보여줘서 디버깅 가능하게
+        const msg =
+          json?.message ||
+          json?.error ||
+          `생성 실패: ${res.status}${raw ? ` / ${raw.slice(0, 200)}` : ""}`;
+        setCreateError(msg);
         return;
       }
 
-      const nextMatchId = (json.match_id || "").trim();
-      const nextAKey = (json.a_join_key || "").trim();
-      const nextBKey = (json.b_join_key || "").trim();
+      if (!json?.ok) {
+        const msg = json?.message || "생성 실패: ok=false";
+        setCreateError(msg);
+        return;
+      }
+
+      // route.ts가 a_join_key/b_join_key를 내려주면 그대로 사용,
+      // 혹시 a_link/b_link만 내려주는 버전이라면 링크에서 k 추출도 지원
+      const nextMatchId = String(json.match_id || "").trim();
+
+      let nextAKey = String(json.a_join_key || "").trim();
+      let nextBKey = String(json.b_join_key || "").trim();
+
+      if ((!nextAKey || !nextBKey) && (json.a_link || json.b_link)) {
+        try {
+          if (!nextAKey && json.a_link) {
+            const u = new URL(String(json.a_link));
+            nextAKey = u.searchParams.get("k") || "";
+          }
+          if (!nextBKey && json.b_link) {
+            const u = new URL(String(json.b_link));
+            nextBKey = u.searchParams.get("k") || "";
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (!nextMatchId || !nextAKey || !nextBKey) {
+        setCreateError(
+          "생성 응답은 받았지만 match_id/a_join_key/b_join_key가 비어 있습니다. route.ts 응답 형태를 확인하세요."
+        );
+        return;
+      }
 
       setMatchId(nextMatchId);
       setAKey(nextAKey);
@@ -175,15 +223,17 @@ export default function TestHubClient() {
 
     try {
       const res = await fetch(`/api/match/state?match_id=${encodeURIComponent(m)}`);
-      const json = await res.json();
+
+      const raw = await res.text();
+      const json = safeJsonParse(raw);
 
       if (!res.ok) {
         setState(null);
-        setStateError(json?.error || `상태 조회 실패: ${res.status}`);
+        setStateError(json?.error || json?.message || `상태 조회 실패: ${res.status}`);
         return;
       }
 
-      const nextState: MatchState | null = json.data ?? null;
+      const nextState: MatchState | null = json?.data ?? null;
       setState(nextState);
     } catch (e: any) {
       setState(null);
@@ -343,15 +393,11 @@ export default function TestHubClient() {
           </div>
 
           {createError && (
-            <div style={{ color: "#b00020", fontSize: 13 }}>
-              생성 오류: {createError}
-            </div>
+            <div style={{ color: "#b00020", fontSize: 13 }}>생성 오류: {createError}</div>
           )}
 
           {copied && (
-            <div style={{ color: "#0a7a2f", fontSize: 13 }}>
-              ✓ {copied} 링크를 복사했습니다.
-            </div>
+            <div style={{ color: "#0a7a2f", fontSize: 13 }}>✓ {copied} 링크를 복사했습니다.</div>
           )}
 
           <label style={{ fontSize: 13, color: "#333" }}>
@@ -405,9 +451,7 @@ export default function TestHubClient() {
           </div>
 
           {stateError && (
-            <div style={{ color: "#b00020", fontSize: 13 }}>
-              상태 조회 오류: {stateError}
-            </div>
+            <div style={{ color: "#b00020", fontSize: 13 }}>상태 조회 오류: {stateError}</div>
           )}
         </div>
       </div>
@@ -487,40 +531,22 @@ export default function TestHubClient() {
       >
         <h3 style={{ marginTop: 0 }}>2탭 테스트(원클릭)</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(aJoin)}
-            style={btnPrimary(!canMakeLinks)}
-          >
+          <button disabled={!canMakeLinks} onClick={() => openNewTab(aJoin)} style={btnPrimary(!canMakeLinks)}>
             A 참가(Join) 새 탭
           </button>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(bJoin)}
-            style={btnPrimary(!canMakeLinks)}
-          >
+          <button disabled={!canMakeLinks} onClick={() => openNewTab(bJoin)} style={btnPrimary(!canMakeLinks)}>
             B 참가(Join) 새 탭
           </button>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(aChat)}
-            style={btnGhost(!canMakeLinks)}
-          >
+          <button disabled={!canMakeLinks} onClick={() => openNewTab(aChat)} style={btnGhost(!canMakeLinks)}>
             A 채팅(Chat) 새 탭
           </button>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(bChat)}
-            style={btnGhost(!canMakeLinks)}
-          >
+          <button disabled={!canMakeLinks} onClick={() => openNewTab(bChat)} style={btnGhost(!canMakeLinks)}>
             B 채팅(Chat) 새 탭
           </button>
         </div>
 
         {!canMakeLinks && (
-          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>
-            match_id + A/B key를 입력하면 버튼이 활성화됩니다.
-          </div>
+          <div style={{ marginTop: 10, fontSize: 13, color: "#666" }}>match_id + A/B key를 입력하면 버튼이 활성화됩니다.</div>
         )}
       </div>
 
