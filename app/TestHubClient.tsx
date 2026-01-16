@@ -21,23 +21,10 @@ function getAppOrigin() {
   return "";
 }
 
-// ✅ 핵심 변경: 쿼리 대신 경로형 링크로 생성
-function buildLink(path: string, matchId: string, k: string) {
+function buildJoinLink(matchId: string, k: string) {
   const origin = getAppOrigin() || "http://localhost:3000";
   const base = origin.replace(/\/+$/, "");
-
-  if (path === "/join") {
-    return `${base}/join/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
-  }
-  if (path === "/chat") {
-    return `${base}/chat/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
-  }
-
-  // 다른 경로가 필요할 때만 쿼리 유지
-  const url = new URL(path, base);
-  url.searchParams.set("match_id", matchId);
-  url.searchParams.set("k", k);
-  return url.toString();
+  return `${base}/join/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
 }
 
 function formatMMSS(ms: number) {
@@ -83,22 +70,12 @@ export default function TestHubClient() {
 
   const aJoin = useMemo(() => {
     if (!matchId || !aKey) return "";
-    return buildLink("/join", matchId, aKey);
+    return buildJoinLink(matchId, aKey);
   }, [matchId, aKey]);
 
   const bJoin = useMemo(() => {
     if (!matchId || !bKey) return "";
-    return buildLink("/join", matchId, bKey);
-  }, [matchId, bKey]);
-
-  const aChat = useMemo(() => {
-    if (!matchId || !aKey) return "";
-    return buildLink("/chat", matchId, aKey);
-  }, [matchId, aKey]);
-
-  const bChat = useMemo(() => {
-    if (!matchId || !bKey) return "";
-    return buildLink("/chat", matchId, bKey);
+    return buildJoinLink(matchId, bKey);
   }, [matchId, bKey]);
 
   const saveLocal = (next?: { matchId?: string; aKey?: string; bKey?: string }) => {
@@ -176,24 +153,8 @@ export default function TestHubClient() {
       }
 
       const nextMatchId = String(json.match_id || "").trim();
-
-      let nextAKey = String(json.a_join_key || "").trim();
-      let nextBKey = String(json.b_join_key || "").trim();
-
-      if ((!nextAKey || !nextBKey) && (json.a_link || json.b_link)) {
-        try {
-          if (!nextAKey && json.a_link) {
-            const u = new URL(String(json.a_link));
-            nextAKey = u.searchParams.get("k") || "";
-          }
-          if (!nextBKey && json.b_link) {
-            const u = new URL(String(json.b_link));
-            nextBKey = u.searchParams.get("k") || "";
-          }
-        } catch {
-          // ignore
-        }
-      }
+      const nextAKey = String(json.a_join_key || "").trim();
+      const nextBKey = String(json.b_join_key || "").trim();
 
       if (!nextMatchId || !nextAKey || !nextBKey) {
         setCreateError(
@@ -207,7 +168,7 @@ export default function TestHubClient() {
       setBKey(nextBKey);
       saveLocal({ matchId: nextMatchId, aKey: nextAKey, bKey: nextBKey });
 
-      alert("생성 완료! 아래 링크가 자동 생성됩니다.");
+      alert("생성 완료! 아래 Join 링크(A/B)만 복사해서 공유하세요.");
     } catch (e: any) {
       setCreateError(e?.message || "네트워크 오류로 생성 실패");
     } finally {
@@ -264,9 +225,9 @@ export default function TestHubClient() {
     >
       <h1 style={{ marginBottom: 6 }}>Chemistry Chat — 테스트 허브</h1>
       <p style={{ marginTop: 0, color: "#666" }}>
-        상용화(자동 매칭/자동 발송) 전까지 운영자가 빠르게 테스트하기 위한 홈 화면입니다.
+        운영자 테스트용 허브입니다. <b>Chat 링크는 공유하지 마세요.</b> (카톡/복사 과정에서 k가 깨질 수 있음)
         <br />
-        링크 생성은 <b>NEXT_PUBLIC_APP_ORIGIN</b> (프로덕션 도메인) 기준으로 고정됩니다.
+        반드시 <b>A/B Join 링크</b>만 공유하세요. (Join이 Chat으로 보내줍니다)
       </p>
 
       <div
@@ -306,19 +267,6 @@ export default function TestHubClient() {
         >
           Join 페이지 열기(/join)
         </button>
-
-        <button
-          onClick={() => openNewTab("/chat")}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid #ddd",
-            background: "#fff",
-            color: "#111",
-          }}
-        >
-          Chat 페이지 열기(/chat)
-        </button>
       </div>
 
       <div
@@ -342,7 +290,7 @@ export default function TestHubClient() {
                 border: "1px solid #ddd",
                 background: "#111",
                 color: "#fff",
-                minWidth: 220,
+                minWidth: 240,
               }}
             >
               {creating ? "생성 중..." : "원클릭 생성(에어테이블 저장)"}
@@ -490,32 +438,18 @@ export default function TestHubClient() {
 
       <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
         <LinkCard
-          title="A Join 링크"
+          title="A Join 링크 (이 링크만 공유)"
           url={aJoin}
           disabled={!matchId || !aKey}
           onCopy={() => copy(aJoin, "A Join")}
           onOpen={() => openNewTab(aJoin)}
         />
         <LinkCard
-          title="B Join 링크"
+          title="B Join 링크 (이 링크만 공유)"
           url={bJoin}
           disabled={!matchId || !bKey}
           onCopy={() => copy(bJoin, "B Join")}
           onOpen={() => openNewTab(bJoin)}
-        />
-        <LinkCard
-          title="A Chat 링크"
-          url={aChat}
-          disabled={!matchId || !aKey}
-          onCopy={() => copy(aChat, "A Chat")}
-          onOpen={() => openNewTab(aChat)}
-        />
-        <LinkCard
-          title="B Chat 링크"
-          url={bChat}
-          disabled={!matchId || !bKey}
-          onCopy={() => copy(bChat, "B Chat")}
-          onOpen={() => openNewTab(bChat)}
         />
       </div>
 
@@ -542,20 +476,6 @@ export default function TestHubClient() {
             style={btnPrimary(!canMakeLinks)}
           >
             B 참가(Join) 새 탭
-          </button>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(aChat)}
-            style={btnGhost(!canMakeLinks)}
-          >
-            A 채팅(Chat) 새 탭
-          </button>
-          <button
-            disabled={!canMakeLinks}
-            onClick={() => openNewTab(bChat)}
-            style={btnGhost(!canMakeLinks)}
-          >
-            B 채팅(Chat) 새 탭
           </button>
         </div>
 
