@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 function buildJoinLink(baseUrl: string, matchId: string, k: string) {
   const url = new URL("/join", baseUrl);
@@ -10,10 +9,11 @@ function buildJoinLink(baseUrl: string, matchId: string, k: string) {
   return url.toString();
 }
 
-export default function InviteClient() {
-  const params = useSearchParams();
-  const initialMatchId = params.get("match_id") || "";
-
+export default function InviteClient({
+  initialMatchId,
+}: {
+  initialMatchId: string;
+}) {
   const [matchId, setMatchId] = useState(initialMatchId);
   const [aKey, setAKey] = useState("");
   const [bKey, setBKey] = useState("");
@@ -76,7 +76,7 @@ export default function InviteClient() {
     }
   };
 
-  // 최초 진입 시 URL의 match_id로 자동 로드
+  // 최초 진입 시 page.tsx가 내려준 match_id로 자동 로드
   useEffect(() => {
     if (initialMatchId) loadKeys(initialMatchId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
