@@ -42,11 +42,6 @@ function formatMMSS(ms: number) {
   return `${mm}:${ss}`;
 }
 
-/**
- * ✅ 변경점:
- * - useSearchParams 제거
- * - page.tsx에서 내려주는 initialMatchId/initialKey를 사용
- */
 export default function ChatClient({
   initialMatchId,
   initialKey,
@@ -54,36 +49,51 @@ export default function ChatClient({
   initialMatchId: string;
   initialKey: string;
 }) {
-  const matchId = initialMatchId;
-  const k = initialKey; // join에서 넘어온 입장키(현재 MVP는 유지)
+  // 1) props 우선
+  const propMatchId = (initialMatchId || "").trim();
+  const propKey = (initialKey || "").trim();
+
+  // 2) props가 비면 pathname에서 복구 (/chat/<matchId>/<k>)
+  const [pathMatchId, pathKey] = useMemo(() => {
+    if (typeof window === "undefined") return ["", ""];
+
+    try {
+      const seg = window.location.pathname.split("/").filter(Boolean);
+      // seg 예: ["chat", "<matchId>", "<k>"]
+      if (seg.length >= 3 && seg[0] === "chat") {
+        const m = decodeURIComponent(seg[1] || "");
+        const k = decodeURIComponent(seg[2] || "");
+        return [m.trim(), k.trim()];
+      }
+    } catch {
+      // ignore
+    }
+    return ["", ""];
+  }, []);
+
+  const matchId = propMatchId || pathMatchId;
+  const k = propKey || pathKey;
 
   const apiKey = process.env.NEXT_PUBLIC_STREAM_KEY;
 
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
 
-  // /api/session 결과(채널/유저/토큰)
   const [session, setSession] = useState<SessionPayload | null>(null);
 
-  // 타이머 상태
   const [state, setState] = useState<MatchState | null>(null);
   const [now, setNow] = useState(Date.now());
 
-  // 상태 폴링 안정화용
   const [stateFetchError, setStateFetchError] = useState<string | null>(null);
 
-  // 연속 실패/폴링 중단
   const [pollStopped, setPollStopped] = useState(false);
   const failRef = useRef(0);
 
-  // "내 첫 메시지 기록"은 1회만 보내기(서버/에어테이블 부하 및 중복 방지)
   const sentFirstRef = useRef(false);
   useEffect(() => {
-    // matchId 바뀌면 리셋
     sentFirstRef.current = false;
   }, [matchId]);
 
-  // 최신 state를 ref로 유지(클로저로 옛 state를 잡는 문제 방지)
   const stateRef = useRef<MatchState | null>(null);
   useEffect(() => {
     stateRef.current = state;
@@ -95,10 +105,24 @@ export default function ChatClient({
     return sharedClient;
   }, [apiKey]);
 
-  // 남은 시간 표시용 tick
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 500);
     return () => clearInterval(t);
+  }, []);
+
+  // ✅ 진단 로그(배포에서도 바로 확인)
+  useEffect(() => {
+    try {
+      console.log("[ChatClient] origin:", window.location.origin);
+      console.log("[ChatClient] href:", window.location.href);
+      console.log("[ChatClient] pathname:", window.location.pathname);
+      console.log("[ChatClient] from props:", { initialMatchId, initialKey });
+      console.log("[ChatClient] from path:", { pathMatchId, pathKey });
+      console.log("[ChatClient] final:", { matchId, k });
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 1) /api/session 호출  2) connectUser  3) channel.watch
@@ -139,7 +163,6 @@ export default function ChatClient({
         const nextSession: SessionPayload = json;
         setSession(nextSession);
 
-        // 같은 유저로 이미 연결돼 있으면 재연결하지 않음
         if (chatClient.userID !== nextSession.user_id) {
           if (chatClient.userID) await chatClient.disconnectUser();
           await chatClient.connectUser(
@@ -167,11 +190,6 @@ export default function ChatClient({
     };
   }, [apiKey, matchId, k, chatClient]);
 
-  // === 상태 조회(주기적으로) - 안정화 최종 ===
-  // - 기본 5초
-  // - 만료면 즉시 중단(최신 stateRef + 응답 기준)
-  // - 429 백오프(최대 20초)
-  // - 5xx/네트워크 연속 6회 실패 시 폴링 완전 중단 + 재시도 버튼
   const pollRef = useRef<{ timer: any; intervalMs: number }>({
     timer: null,
     intervalMs: 5000,
@@ -201,13 +219,11 @@ export default function ChatClient({
     const fetchState = async () => {
       if (!mounted) return;
 
-      // 폴링 중단 상태면 끝
       if (pollStopped) {
         clearPoll();
         return;
       }
 
-      // (1) 최신 stateRef 기준으로 만료면 폴링 중단
       if (isExpired(stateRef.current)) {
         clearPoll();
         return;
@@ -218,7 +234,6 @@ export default function ChatClient({
           signal: controller.signal,
         });
 
-        // 429 레이트리밋: 실패로 치지 말고 백오프만 적용
         if (res.status === 429) {
           setStateFetchError("요청이 많아 잠시 대기 후 다시 시도합니다. (429)");
           pollRef.current.intervalMs = Math.min(pollRef.current.intervalMs * 2, 20000);
@@ -232,14 +247,12 @@ export default function ChatClient({
           const msg = json?.error || `state fetch 실패: ${res.status}`;
           setStateFetchError(msg);
 
-          // 403/404/410은 재시도해도 해결될 가능성이 낮아서 중단(운영 안정성)
           if (res.status === 403 || res.status === 404 || res.status === 410) {
             clearPoll();
             setPollStopped(true);
             return;
           }
 
-          // 5xx 등은 연속 실패 카운트로 제어
           failRef.current += 1;
           if (failRef.current >= 6) {
             clearPoll();
@@ -256,20 +269,17 @@ export default function ChatClient({
 
         const nextState: MatchState | null = json.data ?? null;
         setState(nextState);
-        stateRef.current = nextState; // ref 즉시 동기화
+        stateRef.current = nextState;
         setStateFetchError(null);
 
-        // 성공 시 실패 카운트/중단 플래그 리셋
         failRef.current = 0;
         setPollStopped(false);
 
-        // (2) 이번 응답이 만료면 “즉시” 폴링 중단
         if (isExpired(nextState)) {
           clearPoll();
           return;
         }
 
-        // 정상 회복 시 5초로 원복
         pollRef.current.intervalMs = 5000;
         scheduleNext();
       } catch (e: any) {
@@ -302,8 +312,6 @@ export default function ChatClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matchId, pollStopped]);
 
-  // ✅ 메시지 전송 이벤트를 듣고 “서로 한마디씩” 체크
-  // 핵심: message.new는 상대 메시지에도 발생하므로 "내가 보낸 메시지"일 때만 POST해야 함
   useEffect(() => {
     if (!ready || !chatClient || !session || !matchId) return;
 
@@ -313,10 +321,8 @@ export default function ChatClient({
       const senderId =
         event?.user?.id ?? event?.message?.user?.id ?? event?.message?.user_id;
 
-      // 내가 보낸 메시지가 아니면 무시
       if (!senderId || senderId !== session.user_id) return;
 
-      // 내 첫 메시지 기록은 1회만
       if (sentFirstRef.current) return;
       sentFirstRef.current = true;
 
@@ -330,7 +336,7 @@ export default function ChatClient({
           }),
         });
       } catch {
-        // 조용히 무시(UX 멈춤 방지)
+        // ignore
       }
     };
 
@@ -341,15 +347,18 @@ export default function ChatClient({
     };
   }, [ready, chatClient, session, matchId]);
 
-  // ===== Render =====
   if (error) {
     return (
       <div style={{ padding: 20, fontFamily: "system-ui, sans-serif" }}>
         <h2>채팅 로드 실패</h2>
         <p style={{ color: "crimson" }}>{error}</p>
         <p style={{ color: "#666", fontSize: 13 }}>
-          올바른 진입: /join?match_id=...&k=... (join이 chat으로 보내줍니다)
+          올바른 진입: /join/&lt;match_id&gt;/&lt;k&gt; (join이 chat으로 보내줍니다)
         </p>
+        <pre style={{ fontSize: 12, color: "#666", marginTop: 10, whiteSpace: "pre-wrap" }}>{`props: matchId=${propMatchId || "(empty)"} k=${propKey || "(empty)"}
+path : matchId=${pathMatchId || "(empty)"} k=${pathKey || "(empty)"}
+final: matchId=${matchId || "(empty)"} k=${k || "(empty)"}
+href : ${typeof window !== "undefined" ? window.location.href : ""}`}</pre>
       </div>
     );
   }
@@ -366,7 +375,6 @@ export default function ChatClient({
 
   return (
     <div style={{ height: "100vh" }}>
-      {/* 상단 상태바 */}
       <div
         style={{
           padding: "10px 12px",
@@ -393,14 +401,12 @@ export default function ChatClient({
           </div>
         )}
 
-        {/* 운영/디버그용: 만료 전만 표기 */}
         {!expired && stateFetchError && (
           <div style={{ fontSize: 12, color: "#b00020", marginTop: 6 }}>
             상태 동기화: {stateFetchError}
           </div>
         )}
 
-        {/* 폴링 중단 시 재시도 버튼 */}
         {pollStopped && (
           <div style={{ marginTop: 10 }}>
             <button
