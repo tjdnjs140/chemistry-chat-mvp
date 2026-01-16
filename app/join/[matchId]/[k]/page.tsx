@@ -1,6 +1,6 @@
-export const dynamic = "force-dynamic";
-
 import JoinClient from "../../JoinClient";
+
+export const dynamic = "force-dynamic";
 
 export default function Page({
   params,

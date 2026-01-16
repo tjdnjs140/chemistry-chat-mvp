@@ -1,16 +1,20 @@
-export const dynamic = "force-dynamic";
-
 import { redirect } from "next/navigation";
 
+export const dynamic = "force-dynamic";
+
 type SP = Record<string, string | string[] | undefined>;
-const pick = (sp: SP, key: string) => (typeof sp[key] === "string" ? (sp[key] as string) : "");
+
+function pick(sp: SP, key: string) {
+  const v = sp[key];
+  return typeof v === "string" ? v : "";
+}
 
 export default function Page({ searchParams }: { searchParams: SP }) {
   const matchId = pick(searchParams, "match_id");
   const k = pick(searchParams, "k");
 
-  // k가 없거나 깨진 경우(=현재 네가 겪는 상황) → join으로 유도
   if (!matchId || !k) {
+    // 쿼리로 들어오지 않았거나 파라미터가 깨진 경우: join로 유도
     redirect("/join");
   }
 
