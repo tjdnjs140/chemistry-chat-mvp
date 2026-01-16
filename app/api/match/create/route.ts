@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 function randomKey(len = 24) {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let out = "";
@@ -11,6 +13,7 @@ export async function POST() {
   const airtableToken = process.env.AIRTABLE_TOKEN;
   const baseId = process.env.AIRTABLE_BASE_ID;
   const tableIdOrName = process.env.AIRTABLE_MATCHES_TABLE; // tbl... 유지
+  const origin = process.env.NEXT_PUBLIC_APP_ORIGIN || "http://localhost:3000";
 
   if (!airtableToken || !baseId || !tableIdOrName) {
     return NextResponse.json(
@@ -20,7 +23,6 @@ export async function POST() {
   }
 
   const match_id = `m_${Date.now()}_${randomKey(6)}`;
-
   const a_join_key = `a_${randomKey(28)}`;
   const b_join_key = `b_${randomKey(28)}`;
 
@@ -28,6 +30,7 @@ export async function POST() {
   const a_user_id = `match_${match_id}_a`;
   const b_user_id = `match_${match_id}_b`;
 
+  // (A안) 지금은 채널을 실제로 만들지 않음. (필드만 저장)
   const channel_type = "messaging";
   const channel_id = `match_${match_id}`;
 
@@ -63,17 +66,19 @@ export async function POST() {
     );
   }
 
-  const origin =
-    process.env.NEXT_PUBLIC_APP_ORIGIN || "http://localhost:3000";
+  const a_link = `${origin}/join?match_id=${encodeURIComponent(match_id)}&k=${encodeURIComponent(
+    a_join_key
+  )}`;
+  const b_link = `${origin}/join?match_id=${encodeURIComponent(match_id)}&k=${encodeURIComponent(
+    b_join_key
+  )}`;
 
   return NextResponse.json({
     ok: true,
     match_id,
-    a_link: `${origin}/join?match_id=${encodeURIComponent(match_id)}&k=${encodeURIComponent(
-      a_join_key
-    )}`,
-    b_link: `${origin}/join?match_id=${encodeURIComponent(match_id)}&k=${encodeURIComponent(
-      b_join_key
-    )}`,
+    a_join_key,
+    b_join_key,
+    a_link,
+    b_link,
   });
 }

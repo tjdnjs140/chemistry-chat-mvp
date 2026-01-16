@@ -39,6 +39,9 @@ export default function TestHubClient() {
   const [stateError, setStateError] = useState<string | null>(null);
   const [loadingState, setLoadingState] = useState(false);
 
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+
   const [now, setNow] = useState(Date.now());
 
   // 로컬 저장값 로드
@@ -85,19 +88,17 @@ export default function TestHubClient() {
     return buildLink("/chat", matchId, bKey);
   }, [matchId, bKey]);
 
-  const saveLocal = () => {
+  const saveLocal = (next?: { matchId?: string; aKey?: string; bKey?: string }) => {
     try {
-      localStorage.setItem(
-        LS_KEY,
-        JSON.stringify({
-          matchId: matchId.trim(),
-          aKey: aKey.trim(),
-          bKey: bKey.trim(),
-        })
-      );
-      alert("저장 완료");
+      const payload = {
+        matchId: (next?.matchId ?? matchId).trim(),
+        aKey: (next?.aKey ?? aKey).trim(),
+        bKey: (next?.bKey ?? bKey).trim(),
+      };
+      localStorage.setItem(LS_KEY, JSON.stringify(payload));
+      return payload;
     } catch {
-      alert("저장 실패(브라우저 설정/권한 확인)");
+      return null;
     }
   };
 
@@ -109,6 +110,7 @@ export default function TestHubClient() {
       setBKey("");
       setState(null);
       setStateError(null);
+      setCreateError(null);
       alert("초기화 완료");
     } catch {
       alert("초기화 실패");
@@ -127,6 +129,38 @@ export default function TestHubClient() {
 
   const openNewTab = (url: string) => {
     window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const createMatch = async () => {
+    setCreating(true);
+    setCreateError(null);
+
+    try {
+      // ✅ 네가 준 route.ts 기준 경로
+      const res = await fetch("/api/admin/match/create", { method: "POST" });
+      const json = await res.json();
+
+      if (!res.ok || !json?.ok) {
+        setCreateError(json?.message || `생성 실패: ${res.status}`);
+        return;
+      }
+
+      const nextMatchId = (json.match_id || "").trim();
+      const nextAKey = (json.a_join_key || "").trim();
+      const nextBKey = (json.b_join_key || "").trim();
+
+      setMatchId(nextMatchId);
+      setAKey(nextAKey);
+      setBKey(nextBKey);
+
+      saveLocal({ matchId: nextMatchId, aKey: nextAKey, bKey: nextBKey });
+
+      alert("생성 완료! 아래 링크가 자동 생성됩니다.");
+    } catch (e: any) {
+      setCreateError(e?.message || "네트워크 오류로 생성 실패");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const fetchState = async () => {
@@ -179,7 +213,7 @@ export default function TestHubClient() {
       <p style={{ marginTop: 0, color: "#666" }}>
         상용화(자동 매칭/자동 발송) 전까지 운영자가 빠르게 테스트하기 위한 홈 화면입니다.
         <br />
-        아래에서 <b>match_id + A/B 키</b>만 넣으면 Join/Chat 링크를 자동 생성하고, 복사/새탭 열기로 2탭 테스트가 가능합니다.
+        아래에서 <b>원클릭 생성</b>으로 Airtable에 매치를 만들고, A/B Join 링크를 바로 복사/새탭으로 테스트하세요.
       </p>
 
       {/* 빠른 이동 */}
@@ -247,6 +281,79 @@ export default function TestHubClient() {
         <h3 style={{ margin: "0 0 10px 0" }}>테스트 값 입력</h3>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button
+              onClick={createMatch}
+              disabled={creating}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#111",
+                color: "#fff",
+                minWidth: 220,
+              }}
+            >
+              {creating ? "생성 중..." : "원클릭 생성(에어테이블 저장)"}
+            </button>
+
+            <button
+              onClick={() => {
+                const p = saveLocal();
+                if (p) alert("저장 완료");
+                else alert("저장 실패(브라우저 설정/권한 확인)");
+              }}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#111",
+                color: "#fff",
+              }}
+            >
+              저장(브라우저에 기억)
+            </button>
+
+            <button
+              onClick={clearLocal}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                color: "#111",
+              }}
+            >
+              초기화(저장값 삭제)
+            </button>
+
+            <button
+              onClick={fetchState}
+              disabled={!matchId || loadingState}
+              style={{
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: "1px solid #ddd",
+                background: "#fff",
+                color: "#111",
+              }}
+            >
+              {loadingState ? "상태 조회 중..." : "상태 조회(/api/match/state)"}
+            </button>
+          </div>
+
+          {createError && (
+            <div style={{ color: "#b00020", fontSize: 13 }}>
+              생성 오류: {createError}
+            </div>
+          )}
+
+          {copied && (
+            <div style={{ color: "#0a7a2f", fontSize: 13 }}>
+              ✓ {copied} 링크를 복사했습니다.
+            </div>
+          )}
+
           <label style={{ fontSize: 13, color: "#333" }}>
             match_id
             <input
@@ -296,54 +403,6 @@ export default function TestHubClient() {
               />
             </label>
           </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              onClick={saveLocal}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#111",
-                color: "#fff",
-              }}
-            >
-              저장(브라우저에 기억)
-            </button>
-
-            <button
-              onClick={clearLocal}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                color: "#111",
-              }}
-            >
-              초기화(저장값 삭제)
-            </button>
-
-            <button
-              onClick={fetchState}
-              disabled={!matchId || loadingState}
-              style={{
-                padding: "10px 12px",
-                borderRadius: 10,
-                border: "1px solid #ddd",
-                background: "#fff",
-                color: "#111",
-              }}
-            >
-              {loadingState ? "상태 조회 중..." : "상태 조회(/api/match/state)"}
-            </button>
-          </div>
-
-          {copied && (
-            <div style={{ color: "#0a7a2f", fontSize: 13 }}>
-              ✓ {copied} 링크를 복사했습니다.
-            </div>
-          )}
 
           {stateError && (
             <div style={{ color: "#b00020", fontSize: 13 }}>
