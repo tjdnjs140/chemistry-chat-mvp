@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import { StreamChat } from "stream-chat";
 import {
   Chat,
@@ -43,11 +42,20 @@ function formatMMSS(ms: number) {
   return `${mm}:${ss}`;
 }
 
-export default function ChatClient() {
-  const params = useSearchParams();
-
-  const matchId = params.get("match_id");
-  const k = params.get("k"); // join에서 넘어온 입장키(현재 MVP는 유지)
+/**
+ * ✅ 변경점:
+ * - useSearchParams 제거
+ * - page.tsx에서 내려주는 initialMatchId/initialKey를 사용
+ */
+export default function ChatClient({
+  initialMatchId,
+  initialKey,
+}: {
+  initialMatchId: string;
+  initialKey: string;
+}) {
+  const matchId = initialMatchId;
+  const k = initialKey; // join에서 넘어온 입장키(현재 MVP는 유지)
 
   const apiKey = process.env.NEXT_PUBLIC_STREAM_KEY;
 
@@ -188,8 +196,7 @@ export default function ChatClient() {
       pollRef.current.timer = setTimeout(fetchState, next);
     };
 
-    const isExpired = (s: MatchState | null) =>
-      !!s?.expires_at && s.expires_at <= Date.now();
+    const isExpired = (s: MatchState | null) => !!s?.expires_at && s.expires_at <= Date.now();
 
     const fetchState = async () => {
       if (!mounted) return;

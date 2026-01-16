@@ -1,12 +1,16 @@
-import { Suspense } from "react";
 import ChatClient from "./ChatClient";
 
 export const dynamic = "force-dynamic";
 
-export default function Page() {
+export default function Page({
+  searchParams,
+}: {
+  searchParams: { match_id?: string; k?: string };
+}) {
   return (
-    <Suspense fallback={<div style={{ padding: 16 }}>로딩중...</div>}>
-      <ChatClient />
-    </Suspense>
+    <ChatClient
+      initialMatchId={searchParams.match_id ?? ""}
+      initialKey={searchParams.k ?? ""}
+    />
   );
 }
