@@ -14,9 +14,6 @@ type MatchState = {
 
 const LS_KEY = "chemistry_test_hub_v1";
 
-// ✅ A(프로덕션 고정 도메인) 강제 사용:
-// - NEXT_PUBLIC_APP_ORIGIN이 있으면 그걸 사용
-// - 없으면 window.location.origin
 function getAppOrigin() {
   const envOrigin = (process.env.NEXT_PUBLIC_APP_ORIGIN || "").trim();
   if (envOrigin) return envOrigin.replace(/\/+$/, "");
@@ -24,9 +21,20 @@ function getAppOrigin() {
   return "";
 }
 
+// ✅ 핵심 변경: 쿼리 대신 경로형 링크로 생성
 function buildLink(path: string, matchId: string, k: string) {
-  const origin = getAppOrigin();
-  const url = new URL(path, origin || "http://localhost:3000");
+  const origin = getAppOrigin() || "http://localhost:3000";
+  const base = origin.replace(/\/+$/, "");
+
+  if (path === "/join") {
+    return `${base}/join/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
+  }
+  if (path === "/chat") {
+    return `${base}/chat/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
+  }
+
+  // 다른 경로가 필요할 때만 쿼리 유지
+  const url = new URL(path, base);
   url.searchParams.set("match_id", matchId);
   url.searchParams.set("k", k);
   return url.toString();
@@ -385,7 +393,9 @@ export default function TestHubClient() {
             </button>
           </div>
 
-          {createError && <div style={{ color: "#b00020", fontSize: 13 }}>생성 오류: {createError}</div>}
+          {createError && (
+            <div style={{ color: "#b00020", fontSize: 13 }}>생성 오류: {createError}</div>
+          )}
 
           {copied && (
             <div style={{ color: "#0a7a2f", fontSize: 13 }}>✓ {copied} 링크를 복사했습니다.</div>
@@ -441,7 +451,9 @@ export default function TestHubClient() {
             </label>
           </div>
 
-          {stateError && <div style={{ color: "#b00020", fontSize: 13 }}>상태 조회 오류: {stateError}</div>}
+          {stateError && (
+            <div style={{ color: "#b00020", fontSize: 13 }}>상태 조회 오류: {stateError}</div>
+          )}
         </div>
       </div>
 
@@ -517,16 +529,32 @@ export default function TestHubClient() {
       >
         <h3 style={{ marginTop: 0 }}>2탭 테스트(원클릭)</h3>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button disabled={!canMakeLinks} onClick={() => openNewTab(aJoin)} style={btnPrimary(!canMakeLinks)}>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(aJoin)}
+            style={btnPrimary(!canMakeLinks)}
+          >
             A 참가(Join) 새 탭
           </button>
-          <button disabled={!canMakeLinks} onClick={() => openNewTab(bJoin)} style={btnPrimary(!canMakeLinks)}>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(bJoin)}
+            style={btnPrimary(!canMakeLinks)}
+          >
             B 참가(Join) 새 탭
           </button>
-          <button disabled={!canMakeLinks} onClick={() => openNewTab(aChat)} style={btnGhost(!canMakeLinks)}>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(aChat)}
+            style={btnGhost(!canMakeLinks)}
+          >
             A 채팅(Chat) 새 탭
           </button>
-          <button disabled={!canMakeLinks} onClick={() => openNewTab(bChat)} style={btnGhost(!canMakeLinks)}>
+          <button
+            disabled={!canMakeLinks}
+            onClick={() => openNewTab(bChat)}
+            style={btnGhost(!canMakeLinks)}
+          >
             B 채팅(Chat) 새 탭
           </button>
         </div>

@@ -17,10 +17,8 @@ export default function JoinClient({
 
   const targetUrl = useMemo(() => {
     if (!matchId || !k) return "";
-    const u = new URL("/chat", window.location.origin);
-    u.searchParams.set("match_id", matchId);
-    u.searchParams.set("k", k);
-    return u.toString();
+    // ✅ 이제 chat도 경로형으로 이동
+    return `/chat/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
   }, [matchId, k]);
 
   useEffect(() => {
@@ -29,18 +27,25 @@ export default function JoinClient({
       return;
     }
 
-    // ✅ 여기서 바로 chat으로 넘김 (원래 의도: join이 chat으로 보내줌)
     setRedirecting(true);
     window.location.replace(targetUrl);
   }, [matchId, k, targetUrl]);
 
   if (error) {
     return (
-      <div style={{ padding: 24, fontFamily: "system-ui, sans-serif", color: "#fff", background: "#000", minHeight: "100vh" }}>
+      <div
+        style={{
+          padding: 24,
+          fontFamily: "system-ui, sans-serif",
+          color: "#fff",
+          background: "#000",
+          minHeight: "100vh",
+        }}
+      >
         <h1 style={{ marginTop: 0 }}>채팅 로드 실패</h1>
         <p style={{ color: "#ff4d4f", fontWeight: 700 }}>{error}</p>
         <p style={{ color: "#aaa" }}>
-          올바른 진입: <code>/join?match_id=...&k=...</code> (join이 chat으로 보내줍니다)
+          올바른 진입: <code>/join/&lt;match_id&gt;/&lt;k&gt;</code>
         </p>
       </div>
     );
@@ -49,9 +54,7 @@ export default function JoinClient({
   return (
     <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
       <h2 style={{ marginTop: 0 }}>입장 처리 중...</h2>
-      <p style={{ color: "#666" }}>
-        {redirecting ? "채팅으로 이동 중입니다." : "준비 중입니다."}
-      </p>
+      <p style={{ color: "#666" }}>{redirecting ? "채팅으로 이동 중입니다." : "준비 중입니다."}</p>
     </div>
   );
 }
