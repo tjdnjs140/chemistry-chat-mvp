@@ -1,85 +1,57 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
 
-type JoinResult =
-  | { ok: true; redirect_to: string }
-  | {
-      ok: false;
-      code: "not_found" | "expired" | "disabled" | "invalid_key";
-      message: string;
-    };
+export default function JoinClient({
+  initialMatchId,
+  initialKey,
+}: {
+  initialMatchId: string;
+  initialKey: string;
+}) {
+  const matchId = (initialMatchId || "").trim();
+  const k = (initialKey || "").trim();
 
-export default function JoinClient() {
-  const sp = useSearchParams();
-  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
 
-  const match_id = useMemo(() => sp.get("match_id") || "", [sp]);
-  const k = useMemo(() => sp.get("k") || "", [sp]);
-
-  const [loading, setLoading] = useState(true);
-  const [result, setResult] = useState<JoinResult | null>(null);
+  const targetUrl = useMemo(() => {
+    if (!matchId || !k) return "";
+    const u = new URL("/chat", window.location.origin);
+    u.searchParams.set("match_id", matchId);
+    u.searchParams.set("k", k);
+    return u.toString();
+  }, [matchId, k]);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function run() {
-      try {
-        setLoading(true);
-        const res = await fetch(
-          `/api/join?match_id=${encodeURIComponent(match_id)}&k=${encodeURIComponent(k)}`
-        );
-        const data = (await res.json()) as JoinResult;
-
-        if (cancelled) return;
-        setResult(data);
-        setLoading(false);
-
-        if (data.ok) {
-          router.replace(data.redirect_to);
-        }
-      } catch (e) {
-        if (cancelled) return;
-        setLoading(false);
-        setResult({
-          ok: false,
-          code: "not_found",
-          message: "처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",
-        });
-      }
-    }
-
-    if (!match_id || !k) {
-      setLoading(false);
-      setResult({
-        ok: false,
-        code: "invalid_key",
-        message: "링크가 올바르지 않습니다. (match_id 또는 k 누락)",
-      });
+    if (!matchId || !k) {
+      setError("URL 파라미터(match_id, k)가 부족해요. /join 링크로 들어와야 해요.");
       return;
     }
 
-    run();
-    return () => {
-      cancelled = true;
-    };
-  }, [match_id, k, router]);
+    // ✅ 여기서 바로 chat으로 넘김 (원래 의도: join이 chat으로 보내줌)
+    setRedirecting(true);
+    window.location.replace(targetUrl);
+  }, [matchId, k, targetUrl]);
+
+  if (error) {
+    return (
+      <div style={{ padding: 24, fontFamily: "system-ui, sans-serif", color: "#fff", background: "#000", minHeight: "100vh" }}>
+        <h1 style={{ marginTop: 0 }}>채팅 로드 실패</h1>
+        <p style={{ color: "#ff4d4f", fontWeight: 700 }}>{error}</p>
+        <p style={{ color: "#aaa" }}>
+          올바른 진입: <code>/join?match_id=...&k=...</code> (join이 chat으로 보내줍니다)
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ maxWidth: 520, margin: "40px auto", padding: 16, fontFamily: "system-ui" }}>
-      <h1 style={{ fontSize: 22, marginBottom: 12 }}>채팅방 입장 확인</h1>
-
-      {loading && <p>확인 중입니다… 잠시만 기다려주세요.</p>}
-
-      {!loading && result && !result.ok && (
-        <div style={{ padding: 14, border: "1px solid #ddd", borderRadius: 10 }}>
-          <p style={{ fontSize: 18, margin: 0 }}>{result.message}</p>
-          <p style={{ marginTop: 10, color: "#666" }}>
-            (안내 코드: <b>{result.code}</b>)
-          </p>
-        </div>
-      )}
+    <div style={{ padding: 24, fontFamily: "system-ui, sans-serif" }}>
+      <h2 style={{ marginTop: 0 }}>입장 처리 중...</h2>
+      <p style={{ color: "#666" }}>
+        {redirecting ? "채팅으로 이동 중입니다." : "준비 중입니다."}
+      </p>
     </div>
   );
 }
