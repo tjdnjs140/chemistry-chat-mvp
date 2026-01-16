@@ -17,7 +17,6 @@ export default function JoinClient({
 
   const targetUrl = useMemo(() => {
     if (!matchId || !k) return "";
-    // ✅ 이제 chat도 경로형으로 이동
     return `/chat/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
   }, [matchId, k]);
 

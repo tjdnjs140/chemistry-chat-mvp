@@ -21,10 +21,11 @@ function getAppOrigin() {
   return "";
 }
 
-function buildJoinLink(matchId: string, k: string) {
+// ✅ 무조건 path 기반 join/chat 링크 생성 (쿼리 금지)
+function buildPathLink(kind: "join" | "chat", matchId: string, k: string) {
   const origin = getAppOrigin() || "http://localhost:3000";
   const base = origin.replace(/\/+$/, "");
-  return `${base}/join/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
+  return `${base}/${kind}/${encodeURIComponent(matchId)}/${encodeURIComponent(k)}`;
 }
 
 function formatMMSS(ms: number) {
@@ -70,12 +71,23 @@ export default function TestHubClient() {
 
   const aJoin = useMemo(() => {
     if (!matchId || !aKey) return "";
-    return buildJoinLink(matchId, aKey);
+    return buildPathLink("join", matchId, aKey);
   }, [matchId, aKey]);
 
   const bJoin = useMemo(() => {
     if (!matchId || !bKey) return "";
-    return buildJoinLink(matchId, bKey);
+    return buildPathLink("join", matchId, bKey);
+  }, [matchId, bKey]);
+
+  // (옵션) 운영자 디버그용: path 기반 chat 링크도 제공 (원하면 카드 제거 가능)
+  const aChat = useMemo(() => {
+    if (!matchId || !aKey) return "";
+    return buildPathLink("chat", matchId, aKey);
+  }, [matchId, aKey]);
+
+  const bChat = useMemo(() => {
+    if (!matchId || !bKey) return "";
+    return buildPathLink("chat", matchId, bKey);
   }, [matchId, bKey]);
 
   const saveLocal = (next?: { matchId?: string; aKey?: string; bKey?: string }) => {
@@ -168,7 +180,7 @@ export default function TestHubClient() {
       setBKey(nextBKey);
       saveLocal({ matchId: nextMatchId, aKey: nextAKey, bKey: nextBKey });
 
-      alert("생성 완료! 아래 Join 링크(A/B)만 복사해서 공유하세요.");
+      alert("생성 완료! 아래 Join 링크(A/B)를 복사해서 테스트하세요.");
     } catch (e: any) {
       setCreateError(e?.message || "네트워크 오류로 생성 실패");
     } finally {
@@ -225,9 +237,10 @@ export default function TestHubClient() {
     >
       <h1 style={{ marginBottom: 6 }}>Chemistry Chat — 테스트 허브</h1>
       <p style={{ marginTop: 0, color: "#666" }}>
-        운영자 테스트용 허브입니다. <b>Chat 링크는 공유하지 마세요.</b> (카톡/복사 과정에서 k가 깨질 수 있음)
+        PC/모바일에서 링크 깨짐 방지를 위해 <b>쿼리 링크를 완전히 제거</b>하고
+        <b> /join/&lt;match_id&gt;/&lt;k&gt; </b> 형태만 사용합니다.
         <br />
-        반드시 <b>A/B Join 링크</b>만 공유하세요. (Join이 Chat으로 보내줍니다)
+        배포 도메인 고정은 <b>NEXT_PUBLIC_APP_ORIGIN</b> 값을 사용합니다.
       </p>
 
       <div
@@ -438,18 +451,32 @@ export default function TestHubClient() {
 
       <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
         <LinkCard
-          title="A Join 링크 (이 링크만 공유)"
+          title="A Join 링크 (PC/모바일 공통 안정)"
           url={aJoin}
           disabled={!matchId || !aKey}
           onCopy={() => copy(aJoin, "A Join")}
           onOpen={() => openNewTab(aJoin)}
         />
         <LinkCard
-          title="B Join 링크 (이 링크만 공유)"
+          title="B Join 링크 (PC/모바일 공통 안정)"
           url={bJoin}
           disabled={!matchId || !bKey}
           onCopy={() => copy(bJoin, "B Join")}
           onOpen={() => openNewTab(bJoin)}
+        />
+        <LinkCard
+          title="(디버그) A Chat 링크 (Path 기반)"
+          url={aChat}
+          disabled={!matchId || !aKey}
+          onCopy={() => copy(aChat, "A Chat")}
+          onOpen={() => openNewTab(aChat)}
+        />
+        <LinkCard
+          title="(디버그) B Chat 링크 (Path 기반)"
+          url={bChat}
+          disabled={!matchId || !bKey}
+          onCopy={() => copy(bChat, "B Chat")}
+          onOpen={() => openNewTab(bChat)}
         />
       </div>
 
